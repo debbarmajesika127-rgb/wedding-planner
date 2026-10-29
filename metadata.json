@@ -1,0 +1,6 @@
+{
+  "name": "Nuptia - Wedding Guest & WhatsApp RSVP Manager",
+  "description": "Mobile wedding guest management app with WhatsApp invitations, arrival time planning, vegetarian & non-vegetarian meal counts, absence reminders, and accurate attendance estimation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
