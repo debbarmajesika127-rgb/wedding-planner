@@ -5,7 +5,9 @@ import {
   RSVPStatus,
   ArrivalTimeSlot,
   DietaryChoice,
+  DEFAULT_ARRIVAL_SCHEDULE,
 } from '../types/wedding';
+import { formatArrivalTimeSlot } from '../utils/wedding-logic';
 import {
   Heart,
   CheckCircle2,
@@ -24,10 +26,11 @@ import {
 } from 'lucide-react';
 
 interface GuestRSVPPortalProps {
-  guest: Guest;
+  guest?: Guest | null;
   wedding: WeddingDetails;
   onSaveGuestRSVP: (updatedGuest: Guest) => void;
   onBackToOrganizer?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
@@ -35,31 +38,37 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
   wedding,
   onSaveGuestRSVP,
   onBackToOrganizer,
+  onOpenSettings,
 }) => {
+  const schedule = wedding.arrivalSchedule && wedding.arrivalSchedule.length > 0
+    ? wedding.arrivalSchedule
+    : DEFAULT_ARRIVAL_SCHEDULE;
+
+  const [guestName, setGuestName] = useState(guest?.name || '');
   const [rsvpStatus, setRsvpStatus] = useState<RSVPStatus>(
-    guest.rsvpStatus === 'pending' || guest.rsvpStatus === 'uncertain'
+    guest?.rsvpStatus === 'pending' || guest?.rsvpStatus === 'uncertain' || !guest?.rsvpStatus
       ? 'attending'
       : guest.rsvpStatus
   );
-  const [partySize, setPartySize] = useState<number>(guest.partySize || 1);
+  const [partySize, setPartySize] = useState<number>(guest?.partySize || 1);
   const [arrivalTime, setArrivalTime] = useState<ArrivalTimeSlot>(
-    guest.arrivalTime === 'not-attending' || guest.arrivalTime === 'unknown'
-      ? 'ceremony'
-      : guest.arrivalTime
+    guest?.arrivalTime && guest.arrivalTime !== 'not-attending' && guest.arrivalTime !== 'unknown'
+      ? guest.arrivalTime
+      : schedule[0]?.id || 'ceremony'
   );
   const [partyMembers, setPartyMembers] = useState(
-    guest.partyMembers?.length
+    guest?.partyMembers?.length
       ? guest.partyMembers
       : [
           {
-            name: guest.name.split('&')[0]?.trim() || guest.name,
+            name: guest?.name?.split('&')[0]?.trim() || '',
             dietary: 'non-veg' as DietaryChoice,
             notes: '',
           },
         ]
   );
-  const [absenceReason, setAbsenceReason] = useState(guest.absenceReason || '');
-  const [blessingMessage, setBlessingMessage] = useState(guest.blessingMessage || '');
+  const [absenceReason, setAbsenceReason] = useState(guest?.absenceReason || '');
+  const [blessingMessage, setBlessingMessage] = useState(guest?.blessingMessage || '');
   const [songRequest, setSongRequest] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isCopiedLink, setIsCopiedLink] = useState(false);
@@ -100,26 +109,42 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const arrivalLabel = {
-      ceremony: '3:00 PM',
-      cocktails: '4:30 PM',
-      dinner: '6:00 PM',
-      'late-party': '8:00 PM',
-      'not-attending': undefined,
-      unknown: undefined,
-    }[arrivalTime];
+    const selectedSlot = schedule.find((s) => s.id === arrivalTime);
+    const arrivalLabel = selectedSlot
+      ? `${selectedSlot.title} (${selectedSlot.time})`
+      : formatArrivalTimeSlot(arrivalTime, schedule);
+
+    const finalName = (guestName.trim() || guest?.name || 'Wedding Guest').trim();
+    const finalId = guest?.id || `g-${Date.now()}`;
+    const finalToken = guest?.inviteToken || finalName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+
+    // Ensure member 0 has name
+    const finalMembers = partyMembers.map((m, idx) => {
+      if (idx === 0 && !m.name) {
+        return { ...m, name: finalName };
+      }
+      return m;
+    });
 
     const updated: Guest = {
-      ...guest,
+      id: finalId,
+      name: finalName,
+      phone: guest?.phone || '',
+      relation: guest?.relation || 'Guest',
+      side: guest?.side || 'mutual',
+      table: guest?.table,
+      inviteToken: finalToken,
+      remindersSent: guest?.remindersSent || 0,
+      lastReminderDate: guest?.lastReminderDate,
       rsvpStatus,
       partySize: rsvpStatus === 'attending' ? partySize : 1,
-      partyMembers: rsvpStatus === 'attending' ? partyMembers : [],
+      partyMembers: rsvpStatus === 'attending' ? finalMembers : [],
       arrivalTime: rsvpStatus === 'attending' ? arrivalTime : 'not-attending',
       estimatedArrivalHour: arrivalLabel,
       absenceReason: rsvpStatus === 'declined' ? absenceReason : undefined,
       blessingMessage: blessingMessage.trim() || undefined,
       lastUpdated: new Date().toISOString(),
-      notes: songRequest.trim() ? `Song request: ${songRequest}` : guest.notes,
+      notes: songRequest.trim() ? `Song request: ${songRequest}` : (guest?.notes || ''),
     };
 
     onSaveGuestRSVP(updated);
@@ -140,20 +165,21 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
   // Send WhatsApp confirmation back to couple
   const sendWhatsAppBackToCouple = () => {
     const phone = wedding.coupleContactPhone.replace(/[^0-9]/g, '');
+    const currentName = guestName.trim() || guest?.name || 'Wedding Guest';
     let text = '';
     if (rsvpStatus === 'attending') {
       const vegCount = partyMembers.filter((m) => m.dietary === 'veg').length;
       const nonVegCount = partyMembers.filter((m) => m.dietary === 'non-veg').length;
       text = `Hi ${wedding.brideName} & ${wedding.groomName}! 🥂\n\n` +
-        `This is ${guest.name}. I've confirmed our wedding RSVP!\n` +
+        `This is ${currentName}. I've confirmed our wedding RSVP!\n` +
         `• Party size: ${partySize} attending\n` +
         `• Meals: ${vegCount} Veg, ${nonVegCount} Non-Veg\n` +
-        `• Arrival: ${arrivalTime === 'ceremony' ? 'Ceremony (3:00 PM)' : arrivalTime}\n\n` +
+        `• Arrival: ${formatArrivalTimeSlot(arrivalTime, schedule)}\n\n` +
         (blessingMessage ? `Message: "${blessingMessage}"\n\n` : '') +
         `Can't wait to celebrate with you! ❤️`;
     } else {
       text = `Hi ${wedding.brideName} & ${wedding.groomName} ❤️,\n\n` +
-        `This is ${guest.name}. Sadly we won't be able to make it to the wedding.\n` +
+        `This is ${currentName}. Sadly we won't be able to make it to the wedding.\n` +
         (absenceReason ? `Reason: ${absenceReason}\n` : '') +
         (blessingMessage ? `Note: "${blessingMessage}"\n\n` : '') +
         `Wishing you both the most wonderful celebration and a lifetime of joy! ✨`;
@@ -165,19 +191,20 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
 
   return (
     <div className="max-w-xl mx-auto space-y-4 pb-12 bg-white text-black">
-      {/* Top back bar if host preview */}
+      {/* Optional top quick action bar for sharing */}
       {onBackToOrganizer && (
-        <div className="flex items-center justify-between p-3 bg-white text-black border-2 border-black rounded-2xl shadow-xs text-xs">
+        <div className="flex items-center justify-between p-3.5 bg-white border border-black/15 rounded-2xl shadow-xs text-xs">
+          <div>
+            <span className="font-bold text-black">Guest RSVP Portal</span>
+            <p className="text-[11px] text-black/60">Guests use this link to confirm or update their plans</p>
+          </div>
           <button
             type="button"
             onClick={onBackToOrganizer}
-            className="flex items-center gap-1.5 font-semibold text-[#800000] hover:underline transition-colors"
+            className="px-3 py-1.5 bg-[#800000] text-white hover:bg-[#660000] font-semibold rounded-lg transition-colors flex items-center gap-1.5"
           >
-            <ArrowLeft className="w-4 h-4" /> Back to Couple Dashboard
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to Overview
           </button>
-          <span className="text-black/70">
-            Previewing: <strong className="text-black">{guest.name}</strong>
-          </span>
         </div>
       )}
 
@@ -196,35 +223,81 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
           Together with their families
         </p>
 
-        <h1 className="text-3xl sm:text-4xl font-serif-wedding font-bold text-black tracking-tight">
-          {wedding.brideName} & {wedding.groomName}
-        </h1>
+        {wedding.brideName && wedding.groomName ? (
+          <h1 className="text-3xl sm:text-4xl font-serif-wedding font-bold text-black tracking-tight">
+            {wedding.brideName} & {wedding.groomName}
+          </h1>
+        ) : (
+          <div className="space-y-1 mb-2">
+            <h1 className="text-2xl sm:text-3xl font-serif-wedding font-bold text-black tracking-tight">
+              Our Wedding Celebration
+            </h1>
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="text-xs font-semibold text-[#800000] hover:underline inline-flex items-center gap-1"
+              >
+                <span>Set Bride & Groom Names</span>
+              </button>
+            )}
+          </div>
+        )}
 
-        <p className="text-sm text-black/80 mt-2 max-w-sm mx-auto font-serif-wedding italic">
-          "{wedding.storySnippet}"
-        </p>
+        {wedding.storySnippet && (
+          <p className="text-sm text-black/80 mt-2 max-w-sm mx-auto font-serif-wedding italic">
+            "{wedding.storySnippet}"
+          </p>
+        )}
 
         {/* Date & Location Pills */}
-        <div className="my-6 p-4 bg-white rounded-2xl border border-black/15 space-y-2 text-xs">
-          <div className="flex items-center justify-center gap-2 text-black font-semibold">
-            <Calendar className="w-4 h-4 text-[#800000]" />
-            <span>{wedding.date} at {wedding.time}</span>
+        {(wedding.date || wedding.venueName) && (
+          <div className="my-6 p-4 bg-white rounded-2xl border border-black/15 space-y-2 text-xs">
+            {wedding.date && (
+              <div className="flex items-center justify-center gap-2 text-black font-semibold">
+                <Calendar className="w-4 h-4 text-[#800000]" />
+                <span>{wedding.date}{wedding.time ? ` at ${wedding.time}` : ''}</span>
+              </div>
+            )}
+            {(wedding.venueName || wedding.venueAddress) && (
+              <div className="flex items-center justify-center gap-2 text-black/70">
+                <MapPin className="w-4 h-4 text-[#800000] shrink-0" />
+                <span>{wedding.venueName}{wedding.venueAddress ? ` • ${wedding.venueAddress}` : ''}</span>
+              </div>
+            )}
           </div>
-          <div className="flex items-center justify-center gap-2 text-black/70">
-            <MapPin className="w-4 h-4 text-[#800000] shrink-0" />
-            <span>{wedding.venueName} • {wedding.venueAddress}</span>
-          </div>
-        </div>
+        )}
 
-        {/* Guest Personalized Greeting */}
-        <div className="py-2 px-4 bg-white rounded-xl border border-[#800000] inline-block mb-6">
-          <p className="text-xs text-black font-medium">
-            Invitation prepared for: <strong className="font-bold text-[#800000]">{guest.name}</strong>
-          </p>
-        </div>
+        {/* Guest Personalized Greeting or Name Input */}
+        {guest ? (
+          <div className="py-2 px-4 bg-white rounded-xl border border-[#800000] inline-block mb-6">
+            <p className="text-xs text-black font-medium">
+              Invitation prepared for: <strong className="font-bold text-[#800000]">{guest.name}</strong>
+            </p>
+          </div>
+        ) : (
+          <div className="py-3 px-4 bg-white rounded-xl border border-[#800000] mb-6 text-left max-w-sm mx-auto">
+            <label className="block text-[11px] font-semibold text-black mb-1">
+              Your Name / Family Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={guestName}
+              onChange={(e) => {
+                setGuestName(e.target.value);
+                if (partyMembers.length > 0) {
+                  updateMemberName(0, e.target.value);
+                }
+              }}
+              placeholder="Enter guest or family name"
+              className="w-full px-3 py-1.5 text-xs text-black border border-black/20 rounded-lg focus:outline-none focus:border-[#800000] bg-white font-medium"
+            />
+          </div>
+        )}
 
         {/* Already responded notice if not submitted in this view */}
-        {guest.rsvpStatus !== 'pending' && !isSubmitted && (
+        {guest && guest.rsvpStatus !== 'pending' && !isSubmitted && (
           <div className="mb-6 p-3 bg-white rounded-xl text-xs text-black border border-black/20 flex items-center justify-between">
             <span className="flex items-center gap-1.5 font-medium">
               <ShieldCheck className="w-4 h-4 text-[#800000]" />
@@ -372,7 +445,7 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
                         type="text"
                         value={member.notes || ''}
                         onChange={(e) => updateMemberNotes(idx, e.target.value)}
-                        placeholder="Dietary notes / allergies (e.g. Nut allergy, Gluten-free, Jain)"
+                        placeholder="Dietary notes or allergies"
                         className="w-full px-2.5 py-1 text-[11px] text-black bg-white border border-black/20 rounded-md focus:outline-none focus:border-[#800000]"
                       />
                     </div>
@@ -390,57 +463,27 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
                   </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setArrivalTime('ceremony')}
-                      className={`p-2.5 rounded-xl border text-left text-xs transition-colors ${
-                        arrivalTime === 'ceremony'
-                          ? 'border-2 border-[#800000] bg-white font-bold text-black'
-                          : 'border border-black/20 bg-white text-black hover:border-black'
-                      }`}
-                    >
-                      <div className="font-bold text-black">Full Day & Ceremony</div>
-                      <div className="text-[10px] text-black/60">3:00 PM – 3:30 PM</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setArrivalTime('cocktails')}
-                      className={`p-2.5 rounded-xl border text-left text-xs transition-colors ${
-                        arrivalTime === 'cocktails'
-                          ? 'border-2 border-[#800000] bg-white font-bold text-black'
-                          : 'border border-black/20 bg-white text-black hover:border-black'
-                      }`}
-                    >
-                      <div className="font-bold text-black">Cocktails & Reception</div>
-                      <div className="text-[10px] text-black/60">4:30 PM – 5:00 PM</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setArrivalTime('dinner')}
-                      className={`p-2.5 rounded-xl border text-left text-xs transition-colors ${
-                        arrivalTime === 'dinner'
-                          ? 'border-2 border-[#800000] bg-white font-bold text-black'
-                          : 'border border-black/20 bg-white text-black hover:border-black'
-                      }`}
-                    >
-                      <div className="font-bold text-black">Dinner & Toasts</div>
-                      <div className="text-[10px] text-black/60">6:00 PM</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setArrivalTime('late-party')}
-                      className={`p-2.5 rounded-xl border text-left text-xs transition-colors ${
-                        arrivalTime === 'late-party'
-                          ? 'border-2 border-[#800000] bg-white font-bold text-black'
-                          : 'border border-black/20 bg-white text-black hover:border-black'
-                      }`}
-                    >
-                      <div className="font-bold text-black">Late Night Dancing</div>
-                      <div className="text-[10px] text-black/60">8:00 PM+</div>
-                    </button>
+                    {schedule.map((slot) => {
+                      const isSelected = arrivalTime === slot.id;
+                      return (
+                        <button
+                          key={slot.id}
+                          type="button"
+                          onClick={() => setArrivalTime(slot.id)}
+                          className={`p-2.5 rounded-xl border text-left text-xs transition-colors ${
+                            isSelected
+                              ? 'border-2 border-[#800000] bg-white font-bold text-black shadow-2xs'
+                              : 'border border-black/20 bg-white text-black hover:border-black'
+                          }`}
+                        >
+                          <div className="font-bold text-black">{slot.title}</div>
+                          <div className="text-[10px] text-black/60 mt-0.5">
+                            {slot.time}
+                            {slot.description ? ` • ${slot.description}` : ''}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -454,7 +497,7 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
                     type="text"
                     value={songRequest}
                     onChange={(e) => setSongRequest(e.target.value)}
-                    placeholder="e.g. September by Earth, Wind & Fire"
+                    placeholder="Song request or artist"
                     className="w-full px-3 py-2 text-xs border border-black/20 rounded-xl bg-white text-black focus:outline-none focus:border-[#800000]"
                   />
                 </div>
@@ -491,7 +534,7 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
                     rows={3}
                     value={blessingMessage}
                     onChange={(e) => setBlessingMessage(e.target.value)}
-                    placeholder="Leave a sweet note for Sophia & Liam..."
+                    placeholder={`Leave a sweet note for ${wedding.brideName} & ${wedding.groomName}...`}
                     className="w-full px-3 py-2 text-xs border border-black/20 rounded-xl bg-white text-black focus:outline-none focus:border-[#800000]"
                   />
                 </div>
@@ -554,7 +597,7 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
                   <div className="flex justify-between text-black/70">
                     <span>Arrival Window:</span>
                     <span className="font-medium text-black">
-                      {arrivalTime === 'ceremony' ? 'Ceremony (3:00 PM)' : arrivalTime}
+                      {formatArrivalTimeSlot(arrivalTime, schedule)}
                     </span>
                   </div>
                 </>
@@ -579,7 +622,7 @@ export const GuestRSVPPortal: React.FC<GuestRSVPPortalProps> = ({
                 onClick={sendWhatsAppBackToCouple}
                 className="w-full py-2.5 px-4 bg-[#800000] hover:bg-[#660000] text-white text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-xs"
               >
-                <MessageSquare className="w-4 h-4" /> Send Note to Sophia & Liam on WhatsApp
+                <MessageSquare className="w-4 h-4" /> Send Note on WhatsApp
               </button>
 
               <button

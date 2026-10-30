@@ -6,12 +6,18 @@ import {
   AttendanceForecast,
   ArrivalDistribution,
   WeddingDetails,
+  ArrivalScheduleSlot,
+  DEFAULT_ARRIVAL_SCHEDULE,
+  CateringDetails,
 } from '../types/wedding';
 
 /**
  * Calculates vegetarian vs non-vegetarian meal counts and safety buffers for caterers.
  */
-export function calculateCateringCounts(guests: Guest[]): CateringEstimate {
+export function calculateCateringCounts(
+  guests: Guest[],
+  cateringDetails?: CateringDetails
+): CateringEstimate {
   let vegCount = 0;
   let nonVegCount = 0;
   let totalAttendingGuests = 0;
@@ -56,9 +62,11 @@ export function calculateCateringCounts(guests: Guest[]): CateringEstimate {
   const vegPercentage = totalKnown > 0 ? Math.round((vegCount / totalKnown) * 100) : 0;
   const nonVegPercentage = totalKnown > 0 ? Math.round((nonVegCount / totalKnown) * 100) : 0;
 
-  // Professional wedding caterer standard: +10% buffer on veg (veg is popular as last-minute switch), +8% on non-veg
-  const recommendedVegWithBuffer = Math.ceil(vegCount * 1.10);
-  const recommendedNonVegWithBuffer = Math.ceil(nonVegCount * 1.08);
+  const vegBufferPercent = typeof cateringDetails?.vegBufferPercent === 'number' ? cateringDetails.vegBufferPercent : 10;
+  const nonVegBufferPercent = typeof cateringDetails?.nonVegBufferPercent === 'number' ? cateringDetails.nonVegBufferPercent : 8;
+
+  const recommendedVegWithBuffer = Math.ceil(vegCount * (1 + vegBufferPercent / 100));
+  const recommendedNonVegWithBuffer = Math.ceil(nonVegCount * (1 + nonVegBufferPercent / 100));
 
   return {
     totalAttendingGuests,
@@ -66,6 +74,8 @@ export function calculateCateringCounts(guests: Guest[]): CateringEstimate {
     nonVegCount,
     vegPercentage,
     nonVegPercentage,
+    vegBufferPercent,
+    nonVegBufferPercent,
     recommendedVegWithBuffer,
     recommendedNonVegWithBuffer,
     totalMealsRecommended: recommendedVegWithBuffer + recommendedNonVegWithBuffer,
@@ -167,22 +177,49 @@ export function calculateAttendanceEstimate(guests: Guest[]): AttendanceForecast
 }
 
 /**
- * Calculates arrival time distribution so couples know how many guests will be present
- * for ceremony vs cocktail hour vs dinner.
+ * Returns the couple's configured arrival schedule, or default milestone schedule if not set.
  */
-export function calculateArrivalDistribution(guests: Guest[]): ArrivalDistribution {
+export function getEffectiveSchedule(wedding?: WeddingDetails | null): ArrivalScheduleSlot[] {
+  if (wedding?.arrivalSchedule && wedding.arrivalSchedule.length > 0) {
+    return wedding.arrivalSchedule;
+  }
+  return DEFAULT_ARRIVAL_SCHEDULE;
+}
+
+/**
+ * Calculates arrival time distribution so couples know how many guests will be present
+ * for each scheduled milestone of their wedding day.
+ */
+export function calculateArrivalDistribution(
+  guests: Guest[],
+  customSchedule?: ArrivalScheduleSlot[]
+): ArrivalDistribution {
+  const bySlotId: Record<string, number> = {};
+  if (customSchedule) {
+    for (const slot of customSchedule) {
+      bySlotId[slot.id] = 0;
+    }
+  }
+
   const result: ArrivalDistribution = {
     ceremony: 0,
     cocktails: 0,
     dinner: 0,
     lateParty: 0,
     unspecified: 0,
+    bySlotId,
   };
 
   for (const guest of guests) {
     if (guest.rsvpStatus === 'attending') {
       const party = Math.max(1, guest.partySize || 1);
-      switch (guest.arrivalTime) {
+      const slot = guest.arrivalTime;
+
+      // Track by specific slot id
+      result.bySlotId![slot] = (result.bySlotId![slot] || 0) + party;
+
+      // Track by legacy / standard keys
+      switch (slot) {
         case 'ceremony':
           result.ceremony += party;
           break;
@@ -226,21 +263,33 @@ export function generateWhatsAppMessage(
 
   const cleanPhone = (guest.phone || '').replace(/[^0-9]/g, '');
 
+  const coupleNames = (wedding.brideName && wedding.groomName)
+    ? `${wedding.brideName} & ${wedding.groomName}`
+    : (wedding.brideName || wedding.groomName || 'the couple');
+
+  const coupleDisplay = (wedding.brideName && wedding.groomName)
+    ? `*${wedding.brideName} & ${wedding.groomName}*`
+    : '*Our Wedding Celebration*';
+
+  const weddingDate = wedding.date || 'our wedding day';
+  const weddingVenue = wedding.venueName ? `\n📍 Venue: ${wedding.venueName}` : '';
+  const deadlineClause = wedding.rsvpDeadline ? `Kindly respond by ${wedding.rsvpDeadline}. ` : '';
+
   switch (type) {
     case 'invitation':
       message = `✨ Warm Greetings ${guest.name}! ✨\n\n` +
         `We are delighted to invite you to celebrate our wedding!\n\n` +
-        `💍 *${wedding.brideName} & ${wedding.groomName}*\n` +
-        `📅 Date: ${wedding.date}\n` +
-        `📍 Venue: ${wedding.venueName}\n\n` +
+        `💍 ${coupleDisplay}\n` +
+        `📅 Date: ${weddingDate}` +
+        `${weddingVenue}\n\n` +
         `To help us plan catering (Vegetarian/Non-Veg) and arrival seating, please confirm your attendance or decline here:\n` +
         `👉 ${rsvpLink}\n\n` +
-        `Kindly respond by ${wedding.rsvpDeadline}. We can't wait to celebrate together! 🥂`;
+        `${deadlineClause}We can't wait to celebrate together! 🥂`;
       break;
 
     case 'absence-reminder':
       message = `Dear ${guest.name} 💌,\n\n` +
-        `We hope you are having a wonderful week! We are finalizing wedding details for *${wedding.brideName} & ${wedding.groomName}* on ${wedding.date}.\n\n` +
+        `We hope you are having a wonderful week! We are finalizing wedding details for ${coupleDisplay} on ${weddingDate}.\n\n` +
         `We noticed we haven't received your RSVP yet. Could you take 30 seconds to let us know if you'll be able to join us (Yes or No)?\n\n` +
         `👉 RSVP / Update Plans: ${rsvpLink}\n\n` +
         `Even if you can't make it, letting us know helps us give our caterers an exact headcount. Thank you so much! ❤️`;
@@ -251,23 +300,23 @@ export function generateWhatsAppMessage(
         `Our wedding caterer requires the final guest list and meal preferences (Vegetarian vs Non-Veg) this week.\n\n` +
         `Please confirm or update your plans today so we have your table ready:\n` +
         `👉 ${rsvpLink}\n\n` +
-        `With love, ${wedding.brideName} & ${wedding.groomName} 💐`;
+        `With love, ${coupleNames} 💐`;
       break;
 
     case 'update-plans':
       message = `Hi ${guest.name}! 🌟\n\n` +
         `Just a reminder that you can easily update your wedding plans, arrival time, or dietary needs (Vegetarian/Non-Veg) anytime up to 24 hours before our celebration:\n\n` +
         `👉 Update your plans here: ${rsvpLink}\n\n` +
-        `Can't wait to see you on ${wedding.date}!\n` +
-        `${wedding.brideName} & ${wedding.groomName}`;
+        `Can't wait to see you on ${weddingDate}!\n` +
+        `${coupleNames}`;
       break;
 
     case 'venue-details':
       message = `🎉 Wedding Day Details for ${guest.name}!\n\n` +
-        `💍 *${wedding.brideName} & ${wedding.groomName}*\n` +
-        `📅 ${wedding.date} at ${wedding.time}\n` +
-        `📍 ${wedding.venueName}\n` +
-        `🗺️ Address: ${wedding.venueAddress}\n\n` +
+        `💍 ${coupleDisplay}\n` +
+        `📅 ${weddingDate}${wedding.time ? ` at ${wedding.time}` : ''}\n` +
+        (wedding.venueName ? `📍 ${wedding.venueName}\n` : '') +
+        (wedding.venueAddress ? `🗺️ Address: ${wedding.venueAddress}\n\n` : '\n') +
         `View event schedule, arrival directions & your invitation details:\n` +
         `👉 ${rsvpLink}\n\n` +
         `See you soon! 🥂`;
@@ -282,16 +331,23 @@ export function generateWhatsAppMessage(
   return { text: message, url };
 }
 
-export function formatArrivalTimeSlot(slot: ArrivalTimeSlot): string {
+export function formatArrivalTimeSlot(slot: ArrivalTimeSlot, customSchedule?: ArrivalScheduleSlot[]): string {
+  if (customSchedule && customSchedule.length > 0) {
+    const found = customSchedule.find((s) => s.id === slot);
+    if (found) {
+      return `${found.title} (${found.time})`;
+    }
+  }
+
   switch (slot) {
     case 'ceremony':
-      return 'Ceremony & Full Day (3:00 PM)';
+      return 'Ceremony & Full Day';
     case 'cocktails':
-      return 'Cocktail Hour & Reception (4:30 PM)';
+      return 'Cocktail Hour & Reception';
     case 'dinner':
-      return 'Dinner & Toasts (6:00 PM)';
+      return 'Dinner & Toasts';
     case 'late-party':
-      return 'Late Night Dancing (8:00 PM+)';
+      return 'Late Night Dancing';
     case 'not-attending':
       return 'Unable to Attend';
     case 'unknown':

@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { Guest, GuestSide, RSVPStatus, ArrivalTimeSlot, DietaryChoice } from '../types/wedding';
+import {
+  Guest,
+  GuestSide,
+  RSVPStatus,
+  ArrivalTimeSlot,
+  DietaryChoice,
+  ArrivalScheduleSlot,
+  DEFAULT_ARRIVAL_SCHEDULE,
+} from '../types/wedding';
 import { X, UserPlus, Save, Utensils, Clock, Phone, MapPin } from 'lucide-react';
 
 interface AddEditGuestModalProps {
@@ -7,6 +15,7 @@ interface AddEditGuestModalProps {
   onClose: () => void;
   onSave: (guest: Guest) => void;
   guestToEdit?: Guest | null;
+  arrivalSchedule?: ArrivalScheduleSlot[];
 }
 
 export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
@@ -14,6 +23,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
   onClose,
   onSave,
   guestToEdit,
+  arrivalSchedule = DEFAULT_ARRIVAL_SCHEDULE,
 }) => {
   if (!isOpen) return null;
 
@@ -27,8 +37,11 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
   const [relation, setRelation] = useState(guestToEdit?.relation || '');
   const [rsvpStatus, setRsvpStatus] = useState<RSVPStatus>(guestToEdit?.rsvpStatus || 'pending');
   const [partySize, setPartySize] = useState<number>(guestToEdit?.partySize || 1);
-  const [arrivalTime, setArrivalTime] = useState<ArrivalTimeSlot>(guestToEdit?.arrivalTime || 'ceremony');
-  const [estimatedArrivalHour, setEstimatedArrivalHour] = useState(guestToEdit?.estimatedArrivalHour || '3:15 PM');
+  const schedule = arrivalSchedule.length > 0 ? arrivalSchedule : DEFAULT_ARRIVAL_SCHEDULE;
+  const [arrivalTime, setArrivalTime] = useState<ArrivalTimeSlot>(
+    guestToEdit?.arrivalTime || schedule[0]?.id || 'ceremony'
+  );
+  const [estimatedArrivalHour, setEstimatedArrivalHour] = useState(guestToEdit?.estimatedArrivalHour || '');
   const [absenceReason, setAbsenceReason] = useState(guestToEdit?.absenceReason || '');
   const [notes, setNotes] = useState(guestToEdit?.notes || '');
   
@@ -155,7 +168,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Jessica Vance & Family"
+                placeholder="Guest or family name"
                 className="w-full px-3 py-2 text-sm text-black bg-white border border-black/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
               />
             </div>
@@ -187,7 +200,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+14155551234"
+                placeholder="Phone number"
                 className="w-full px-3 py-2 text-sm text-black bg-white border border-black/20 rounded-lg focus:outline-none focus:border-[#800000]"
               />
             </div>
@@ -199,7 +212,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
                 type="text"
                 value={relation}
                 onChange={(e) => setRelation(e.target.value)}
-                placeholder="e.g. College Friend, Cousin"
+                placeholder="Relationship"
                 className="w-full px-3 py-2 text-sm text-black bg-white border border-black/20 rounded-lg focus:outline-none focus:border-[#800000]"
               />
             </div>
@@ -285,7 +298,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
                     type="text"
                     value={member.notes || ''}
                     onChange={(e) => updateMemberNotes(idx, e.target.value)}
-                    placeholder="Allergies / dietary notes (e.g. Gluten-free, Nut allergy)"
+                    placeholder="Dietary requirements or allergies"
                     className="w-full px-2.5 py-1 text-[11px] text-black bg-white border border-black/20 rounded-md focus:outline-none focus:border-[#800000]"
                   />
                 </div>
@@ -299,19 +312,28 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={arrivalTime}
-                    onChange={(e) => setArrivalTime(e.target.value as ArrivalTimeSlot)}
+                    onChange={(e) => {
+                      const val = e.target.value as ArrivalTimeSlot;
+                      setArrivalTime(val);
+                      const found = schedule.find((s) => s.id === val);
+                      if (found && !estimatedArrivalHour) {
+                        setEstimatedArrivalHour(found.time);
+                      }
+                    }}
                     className="px-2.5 py-1.5 text-xs border border-black/20 rounded-lg bg-white text-black font-medium"
                   >
-                    <option value="ceremony">Ceremony (3:00 - 3:30 PM)</option>
-                    <option value="cocktails">Cocktails (4:30 - 5:00 PM)</option>
-                    <option value="dinner">Dinner Only (6:00 PM)</option>
-                    <option value="late-party">Late Dancing (8:00 PM+)</option>
+                    {schedule.map((slot) => (
+                      <option key={slot.id} value={slot.id}>
+                        {slot.title} ({slot.time})
+                      </option>
+                    ))}
+                    <option value="not-attending">Not Attending</option>
                   </select>
                   <input
                     type="text"
                     value={estimatedArrivalHour}
                     onChange={(e) => setEstimatedArrivalHour(e.target.value)}
-                    placeholder="Est. Time e.g. 3:15 PM"
+                    placeholder="Arrival time"
                     className="px-2.5 py-1.5 text-xs border border-black/20 rounded-lg bg-white text-black"
                   />
                 </div>
@@ -329,7 +351,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
                 type="text"
                 value={absenceReason}
                 onChange={(e) => setAbsenceReason(e.target.value)}
-                placeholder="e.g. Out of town, Prior family commitment"
+                placeholder="Reason for absence"
                 className="w-full px-3 py-2 text-xs border border-black/20 rounded-lg bg-white text-black focus:border-[#800000]"
               />
             </div>
@@ -344,7 +366,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
               type="text"
               value={table}
               onChange={(e) => setTable(e.target.value)}
-              placeholder="e.g. Table 4 - Rose Garden"
+              placeholder="Table number or name"
               className="w-full px-3 py-2 text-sm border border-black/20 rounded-lg bg-white text-black focus:outline-none focus:border-[#800000]"
             />
           </div>
@@ -358,7 +380,7 @@ export const AddEditGuestModal: React.FC<AddEditGuestModalProps> = ({
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Requires ground-floor parking, bringing camera"
+              placeholder="Notes for host"
               className="w-full px-3 py-2 text-xs border border-black/20 rounded-lg bg-white text-black focus:outline-none focus:border-[#800000]"
             />
           </div>

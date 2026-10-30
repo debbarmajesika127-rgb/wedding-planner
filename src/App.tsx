@@ -12,23 +12,32 @@ import {
   calculateArrivalDistribution,
 } from './utils/wedding-logic';
 
-import { HeaderNav, ActiveTab, AppMode } from './components/HeaderNav';
+import { HeaderNav, ActiveTab } from './components/HeaderNav';
 import { AttendanceEstimatorCard } from './components/AttendanceEstimatorCard';
 import { GuestListManager } from './components/GuestListManager';
 import { WhatsAppHub } from './components/WhatsAppHub';
 import { CateringScheduleSheet } from './components/CateringScheduleSheet';
 import { GuestRSVPPortal } from './components/GuestRSVPPortal';
 import { AddEditGuestModal } from './components/AddEditGuestModal';
+import { WeddingSettingsModal } from './components/WeddingSettingsModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { Settings, Heart } from 'lucide-react';
 
-const STORAGE_KEY = 'nuptia_wedding_guests_v1';
-const WEDDING_STORAGE_KEY = 'nuptia_wedding_details_v1';
+const STORAGE_KEY = 'nuptia_wedding_guests_v4';
+const WEDDING_STORAGE_KEY = 'nuptia_wedding_details_v5';
 
 export default function App() {
   const [wedding, setWedding] = useState<WeddingDetails>(() => {
     try {
       const stored = localStorage.getItem(WEDDING_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : INITIAL_WEDDING;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (!parsed.arrivalSchedule || parsed.arrivalSchedule.length === 0) {
+          parsed.arrivalSchedule = INITIAL_WEDDING.arrivalSchedule;
+        }
+        return parsed;
+      }
+      return INITIAL_WEDDING;
     } catch {
       return INITIAL_WEDDING;
     }
@@ -43,17 +52,31 @@ export default function App() {
     }
   });
 
-  const [appMode, setAppMode] = useState<AppMode>('organizer');
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+  const [copiedInviteLink, setCopiedInviteLink] = useState(false);
 
-  // Currently selected guest for Guest RSVP Portal view
-  const [selectedGuestForPortal, setSelectedGuestForPortal] = useState<Guest>(() => {
-    return guests[0] || INITIAL_GUESTS[0];
+  // Currently selected guest for Invitation & RSVP tab (null if list is empty)
+  const [selectedGuestForPortal, setSelectedGuestForPortal] = useState<Guest | null>(() => {
+    return guests.length > 0 ? guests[0] : null;
   });
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'details' | 'schedule' | 'catering'>('details');
   const [guestToEdit, setGuestToEdit] = useState<Guest | null>(null);
+
+  // Keep selectedGuestForPortal in sync when guests change
+  useEffect(() => {
+    if (selectedGuestForPortal) {
+      const found = guests.find((g) => g.id === selectedGuestForPortal.id);
+      if (found) {
+        setSelectedGuestForPortal(found);
+      }
+    } else if (guests.length > 0) {
+      setSelectedGuestForPortal(guests[0]);
+    }
+  }, [guests]);
 
   // Sync guests to localStorage
   useEffect(() => {
@@ -63,6 +86,15 @@ export default function App() {
       // localstorage errors ignored
     }
   }, [guests]);
+
+  // Sync wedding details to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(WEDDING_STORAGE_KEY, JSON.stringify(wedding));
+    } catch {
+      // localstorage errors ignored
+    }
+  }, [wedding]);
 
   // Read URL query parameter "?guest=ID_OR_TOKEN" on mount
   useEffect(() => {
@@ -74,15 +106,21 @@ export default function App() {
       );
       if (found) {
         setSelectedGuestForPortal(found);
-        setAppMode('guest');
+        setActiveTab('invite');
       }
     }
   }, []);
 
   // Compute metrics
   const forecast = useMemo(() => calculateAttendanceEstimate(guests), [guests]);
-  const catering = useMemo(() => calculateCateringCounts(guests), [guests]);
-  const arrivals = useMemo(() => calculateArrivalDistribution(guests), [guests]);
+  const catering = useMemo(
+    () => calculateCateringCounts(guests, wedding.cateringDetails),
+    [guests, wedding.cateringDetails]
+  );
+  const arrivals = useMemo(
+    () => calculateArrivalDistribution(guests, wedding.arrivalSchedule),
+    [guests, wedding.arrivalSchedule]
+  );
 
   const pendingCount = useMemo(() => {
     return guests.filter((g) => g.rsvpStatus === 'pending' || g.rsvpStatus === 'uncertain').length;
@@ -109,109 +147,151 @@ export default function App() {
     if (selectedGuestForPortal?.id === guestId) {
       const remaining = guests.filter((g) => g.id !== guestId);
       if (remaining.length > 0) setSelectedGuestForPortal(remaining[0]);
+      else setSelectedGuestForPortal(null);
     }
   };
 
-  const handleResetData = () => {
-    if (confirm('Reset guest list and RSVPs to sample wedding data?')) {
-      setGuests(INITIAL_GUESTS);
-      setWedding(INITIAL_WEDDING);
-      setSelectedGuestForPortal(INITIAL_GUESTS[0]);
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(WEDDING_STORAGE_KEY);
-    }
+  const handleSaveWeddingDetails = (updated: WeddingDetails) => {
+    setWedding(updated);
   };
 
   // Open guest in RSVP Portal mode
   const handleOpenGuestRSVP = (guest: Guest) => {
     setSelectedGuestForPortal(guest);
-    setAppMode('guest');
+    setActiveTab('invite');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Open guest in WhatsApp tab
   const handleOpenWhatsAppForGuest = (guest: Guest) => {
     setActiveTab('whatsapp');
-    setAppMode('organizer');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Share General Wedding RSVP link
+  const handleShareInviteLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}`;
+    navigator.clipboard.writeText(url);
+    setCopiedInviteLink(true);
+    setTimeout(() => setCopiedInviteLink(false), 2000);
   };
 
   return (
     <div className="min-h-screen bg-white text-black pb-20 sm:pb-12 antialiased selection:bg-[#800000] selection:text-white">
-      {/* Top Header Navigation */}
+      {/* Top Header Navigation Bar */}
       <HeaderNav
         wedding={wedding}
-        appMode={appMode}
-        onSetAppMode={setAppMode}
         activeTab={activeTab}
         onSetActiveTab={setActiveTab}
         onAddGuestClick={() => {
           setGuestToEdit(null);
           setIsModalOpen(true);
         }}
-        onResetData={handleResetData}
+        onOpenSettings={() => {
+          setSettingsInitialTab('details');
+          setIsSettingsOpen(true);
+        }}
         pendingCount={pendingCount}
         allGuests={guests}
-        selectedGuestForPortal={selectedGuestForPortal}
-        onSelectGuestForPortal={setSelectedGuestForPortal}
+        onShareInviteClick={handleShareInviteLink}
+        copiedInviteLink={copiedInviteLink}
       />
 
       {/* Main Container */}
       <main className="max-w-5xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
-        {appMode === 'guest' ? (
-          /* Guest RSVP Portal View */
-          <GuestRSVPPortal
-            guest={selectedGuestForPortal}
-            wedding={wedding}
-            onSaveGuestRSVP={handleSaveGuest}
-            onBackToOrganizer={() => setAppMode('organizer')}
+        {/* Unobtrusive Setup Reminder when couple names are not yet entered */}
+        {!wedding.brideName && !wedding.groomName && activeTab === 'overview' && (
+          <div className="mb-4 p-4 bg-white rounded-2xl border-2 border-[#800000] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-white text-[#800000] border-2 border-[#800000] flex items-center justify-center shrink-0">
+                <Heart className="w-5 h-5 fill-[#800000]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-black">Welcome to Nuptia!</h3>
+                <p className="text-xs text-black/70">
+                  Enter your bride & groom names, wedding date, and arrival schedule to personalize invitations and WhatsApp links.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsInitialTab('details');
+                setIsSettingsOpen(true);
+              }}
+              className="px-4 py-2 bg-[#800000] hover:bg-[#660000] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs shrink-0 flex items-center gap-1.5"
+            >
+              <Settings className="w-3.5 h-3.5" /> Set Bride & Groom Names
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'overview' && (
+          <AttendanceEstimatorCard
+            forecast={forecast}
+            catering={catering}
+            arrivals={arrivals}
+            arrivalSchedule={wedding.arrivalSchedule}
+            onNavigateToReminders={() => setActiveTab('whatsapp')}
+            onOpenScheduleSettings={() => {
+              setSettingsInitialTab('schedule');
+              setIsSettingsOpen(true);
+            }}
           />
-        ) : (
-          /* Organizer Dashboard */
-          <div className="space-y-6">
-            {activeTab === 'overview' && (
-              <AttendanceEstimatorCard
-                forecast={forecast}
-                catering={catering}
-                arrivals={arrivals}
-                onNavigateToReminders={() => setActiveTab('whatsapp')}
-              />
-            )}
+        )}
 
-            {activeTab === 'guests' && (
-              <GuestListManager
-                guests={guests}
-                onAddGuestClick={() => {
-                  setGuestToEdit(null);
-                  setIsModalOpen(true);
-                }}
-                onEditGuest={(guest) => {
-                  setGuestToEdit(guest);
-                  setIsModalOpen(true);
-                }}
-                onDeleteGuest={handleDeleteGuest}
-                onOpenGuestRSVP={handleOpenGuestRSVP}
-                onOpenWhatsAppModal={handleOpenWhatsAppForGuest}
-              />
-            )}
+        {activeTab === 'guests' && (
+          <GuestListManager
+            guests={guests}
+            onAddGuestClick={() => {
+              setGuestToEdit(null);
+              setIsModalOpen(true);
+            }}
+            onEditGuest={(guest) => {
+              setGuestToEdit(guest);
+              setIsModalOpen(true);
+            }}
+            onDeleteGuest={handleDeleteGuest}
+            onOpenGuestRSVP={handleOpenGuestRSVP}
+            onOpenWhatsAppModal={handleOpenWhatsAppForGuest}
+          />
+        )}
 
-            {activeTab === 'whatsapp' && (
-              <WhatsAppHub
-                guests={guests}
-                wedding={wedding}
-                onUpdateGuest={handleSaveGuest}
-                onOpenGuestRSVP={handleOpenGuestRSVP}
-              />
-            )}
+        {activeTab === 'whatsapp' && (
+          <WhatsAppHub
+            guests={guests}
+            wedding={wedding}
+            onUpdateGuest={handleSaveGuest}
+            onOpenGuestRSVP={handleOpenGuestRSVP}
+          />
+        )}
 
-            {activeTab === 'catering' && (
-              <CateringScheduleSheet
-                guests={guests}
-                catering={catering}
-                arrivals={arrivals}
-                wedding={wedding}
-              />
-            )}
+        {activeTab === 'catering' && (
+          <CateringScheduleSheet
+            guests={guests}
+            catering={catering}
+            arrivals={arrivals}
+            wedding={wedding}
+            onOpenSettings={(tab) => {
+              setSettingsInitialTab(tab || 'catering');
+              setIsSettingsOpen(true);
+            }}
+            onUpdateWeddingDetails={handleSaveWeddingDetails}
+          />
+        )}
+
+        {activeTab === 'invite' && (
+          <div className="space-y-4">
+            <GuestRSVPPortal
+              guest={selectedGuestForPortal}
+              wedding={wedding}
+              onSaveGuestRSVP={handleSaveGuest}
+              onBackToOrganizer={() => setActiveTab('overview')}
+              onOpenSettings={() => {
+                setSettingsInitialTab('details');
+                setIsSettingsOpen(true);
+              }}
+            />
           </div>
         )}
       </main>
@@ -225,12 +305,20 @@ export default function App() {
         }}
         onSave={handleSaveGuest}
         guestToEdit={guestToEdit}
+        arrivalSchedule={wedding.arrivalSchedule}
+      />
+
+      {/* Bride & Groom Wedding Settings Modal */}
+      <WeddingSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        wedding={wedding}
+        onSave={handleSaveWeddingDetails}
+        initialTab={settingsInitialTab}
       />
 
       {/* Mobile Bottom Navigation Bar */}
       <MobileBottomNav
-        appMode={appMode}
-        onSetAppMode={setAppMode}
         activeTab={activeTab}
         onSetActiveTab={setActiveTab}
         pendingCount={pendingCount}

@@ -101,6 +101,22 @@ test('calculateCateringCounts correctly sums veg, non-veg and includes buffer', 
   assert.ok(result.allergyNotes[0].note.includes('Gluten-sensitive'));
 });
 
+test('calculateCateringCounts applies couple-customized buffer percentages', () => {
+  const customCatering = {
+    catererName: 'Artisan Kitchen',
+    catererPhone: '+15551234567',
+    vegBufferPercent: 20,
+    nonVegBufferPercent: 15,
+  };
+  const result = calculateCateringCounts(mockGuests, customCatering);
+  assert.equal(result.vegBufferPercent, 20);
+  assert.equal(result.nonVegBufferPercent, 15);
+  // 1 veg * 1.20 = 1.2 -> ceil = 2
+  assert.equal(result.recommendedVegWithBuffer, 2);
+  // 2 non-veg * 1.15 = 2.3 -> ceil = 3
+  assert.equal(result.recommendedNonVegWithBuffer, 3);
+});
+
 test('calculateAttendanceEstimate computes realistic headcount forecast with drop-off logic', () => {
   const forecast = calculateAttendanceEstimate(mockGuests);
 
@@ -133,4 +149,39 @@ test('generateWhatsAppMessage creates customized links with deep link url', () =
   const absenceReminder = generateWhatsAppMessage('absence-reminder', mockGuests[3], mockWedding, 'https://example.com');
   assert.ok(absenceReminder.text.includes('haven\'t received your RSVP yet'));
   assert.ok(absenceReminder.url.includes('aiden-p'));
+});
+
+test('calculateArrivalDistribution handles couple-configured custom arrival schedule', () => {
+  const customSchedule = [
+    { id: 'welcome-tea', title: 'Welcome Tea', time: '1:00 PM' },
+    { id: 'ceremony', title: 'Ceremony', time: '3:00 PM' },
+    { id: 'cocktails', title: 'Cocktails', time: '5:00 PM' },
+  ];
+
+  const guestsWithCustomSlot: Guest[] = [
+    {
+      id: 'g-tea',
+      name: 'Grandma Rose',
+      phone: '+14155550001',
+      side: 'family',
+      rsvpStatus: 'attending',
+      partySize: 3,
+      partyMembers: [
+        { name: 'Rose', dietary: 'veg' },
+        { name: 'Arthur', dietary: 'veg' },
+        { name: 'Leo', dietary: 'non-veg' },
+      ],
+      arrivalTime: 'welcome-tea',
+      lastUpdated: '2026-10-15T09:00:00Z',
+      remindersSent: 0,
+      inviteToken: 'grandma-rose',
+      relation: 'Grandmother',
+    },
+    ...mockGuests,
+  ];
+
+  const arrivals = calculateArrivalDistribution(guestsWithCustomSlot, customSchedule);
+  assert.equal(arrivals.bySlotId?.['welcome-tea'], 3);
+  assert.equal(arrivals.ceremony, 2);
+  assert.equal(arrivals.cocktails, 1);
 });

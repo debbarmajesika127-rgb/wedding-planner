@@ -140,47 +140,52 @@ export const WhatsAppHub: React.FC<WhatsAppHubProps> = ({
 
           {/* List of Guests */}
           <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
-            {(activeQueueTab === 'absence-queue' ? pendingGuests : guests).map((guest) => {
-              const isSelected = guest.id === selectedGuestId;
-              const badge = getStatusBadgeInfo(guest.rsvpStatus);
-
-              return (
-                <div
-                  key={guest.id}
-                  onClick={() => setSelectedGuestId(guest.id)}
-                  className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-white border-2 border-[#800000] shadow-xs'
-                      : 'bg-white border-black/15 hover:border-black'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="font-semibold text-xs text-black truncate">
-                      {guest.name}
-                    </span>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${badge.bg} ${badge.text} ${badge.border}`}
-                    >
-                      {badge.label}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-2 text-[11px] text-black/60">
-                    <span>{guest.phone || 'No phone logged'}</span>
-                    <span className="flex items-center gap-1 text-black font-medium">
-                      <Bell className="w-3 h-3 text-[#800000]" />
-                      {guest.remindersSent > 0 ? `${guest.remindersSent} sent` : '0 sent'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-
-            {activeQueueTab === 'absence-queue' && pendingGuests.length === 0 && (
-              <div className="py-8 text-center text-xs text-black/60 space-y-1">
-                <p className="font-semibold text-black">🎉 No absent or pending guests!</p>
-                <p>All your wedding guests have responded.</p>
+            {(activeQueueTab === 'absence-queue' ? pendingGuests : guests).length === 0 ? (
+              <div className="py-8 text-center text-black/60 text-xs border border-dashed border-black/20 rounded-xl p-4 space-y-1">
+                <Users className="w-5 h-5 text-black/30 mx-auto" />
+                <p className="font-semibold text-black">
+                  {activeQueueTab === 'absence-queue' ? 'No unconfirmed guests' : 'No guests added yet'}
+                </p>
+                <p className="text-[11px] text-black/50">
+                  {activeQueueTab === 'absence-queue' ? 'All guests have responded or none are pending.' : 'Add guests to send WhatsApp invites.'}
+                </p>
               </div>
+            ) : (
+              (activeQueueTab === 'absence-queue' ? pendingGuests : guests).map((guest) => {
+                const isSelected = guest.id === selectedGuestId;
+                const badge = getStatusBadgeInfo(guest.rsvpStatus);
+
+                return (
+                  <div
+                    key={guest.id}
+                    onClick={() => setSelectedGuestId(guest.id)}
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-white border-2 border-[#800000] shadow-xs'
+                        : 'bg-white border-black/15 hover:border-black'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-semibold text-xs text-black truncate">
+                        {guest.name}
+                      </span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${badge.bg} ${badge.text} ${badge.border}`}
+                      >
+                        {badge.label}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between mt-2 text-[11px] text-black/60">
+                      <span>{guest.phone || 'No phone logged'}</span>
+                      <span className="flex items-center gap-1 text-black font-medium">
+                        <Bell className="w-3 h-3 text-[#800000]" />
+                        {guest.remindersSent > 0 ? `${guest.remindersSent} sent` : '0 sent'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -347,8 +352,16 @@ export const WhatsAppHub: React.FC<WhatsAppHubProps> = ({
               </div>
             </>
           ) : (
-            <div className="py-12 text-center text-black/60 text-sm">
-              Select a guest from the left to compose a WhatsApp invitation or absence reminder.
+            <div className="py-12 text-center text-black/60 text-sm space-y-2">
+              <MessageSquare className="w-8 h-8 text-[#800000]/40 mx-auto" />
+              <p className="font-semibold text-black">
+                {guests.length === 0 ? 'No Guests in List' : 'Select a Guest'}
+              </p>
+              <p className="text-xs text-black/60 max-w-xs mx-auto">
+                {guests.length === 0
+                  ? 'Add guests from the Guests tab to compose personalized WhatsApp invitations and absence reminders.'
+                  : 'Select a guest from the left to compose a WhatsApp invitation or absence reminder.'}
+              </p>
             </div>
           )}
         </div>

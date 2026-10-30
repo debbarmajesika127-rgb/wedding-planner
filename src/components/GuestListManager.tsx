@@ -404,15 +404,34 @@ export const GuestListManager: React.FC<GuestListManagerProps> = ({
           );
         })}
 
-        {filteredGuests.length === 0 && (
-          <div className="col-span-2 py-12 text-center bg-white rounded-2xl border border-black/20 p-6 space-y-2">
+        {guests.length === 0 ? (
+          <div className="col-span-1 md:col-span-2 py-12 text-center bg-white rounded-2xl border border-black/15 p-8 space-y-3">
+            <div className="w-12 h-12 rounded-full bg-white border-2 border-[#800000] text-[#800000] flex items-center justify-center mx-auto shadow-2xs">
+              <Users className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-black">No Guests Added Yet</h3>
+            <p className="text-xs text-black/60 max-w-sm mx-auto">
+              Add your wedding guests to track RSVPs, manage vegetarian and non-vegetarian catering counts, and send WhatsApp reminders.
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onAddGuestClick}
+                className="px-4 py-2 bg-[#800000] hover:bg-[#660000] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Add First Guest
+              </button>
+            </div>
+          </div>
+        ) : filteredGuests.length === 0 ? (
+          <div className="col-span-1 md:col-span-2 py-12 text-center bg-white rounded-2xl border border-black/20 p-6 space-y-2">
             <Users className="w-8 h-8 text-black/30 mx-auto" />
-            <p className="text-sm font-semibold text-black">No wedding guests match filters</p>
+            <p className="text-sm font-semibold text-black">No guests match filters</p>
             <p className="text-xs text-black/60">
               Try clearing your search query or reset status and dietary filters.
             </p>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
